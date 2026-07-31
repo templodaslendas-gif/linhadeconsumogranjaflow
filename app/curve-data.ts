@@ -43,7 +43,7 @@ export const phases: PhaseDefinition[] = [
   { name: "TERM I", shortName: "Terminação I", startDay: 47, endDay: 66, officialTotal: 47.5, color: "#075A8C", pale: "#E2EFF7" },
   { name: "EXTRA II", shortName: "Extra II", startDay: 67, endDay: 78, officialTotal: 32.9, color: "#18A999", pale: "#E1F5F2" },
   { name: "TERM II", shortName: "Terminação II", startDay: 79, endDay: 105, officialTotal: 80.05, color: "#063B64", pale: "#E0EAF1" },
-  { name: "NÃO INFORMADA", shortName: "Sem fase", startDay: 106, endDay: 112, officialTotal: 22.05, color: "#E3A900", pale: "#FFF1BA", unclassified: true },
+  { name: "NÃO INFORMADA", shortName: "", startDay: 106, endDay: 112, officialTotal: 22.05, color: "#E3A900", pale: "#FFF1BA", unclassified: true },
 ];
 
 export function phaseForDay(day: number) {

@@ -1,11 +1,10 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   curveData,
   finalCurveTotal,
-  officialPhaseTotal,
   phaseForDay,
   phases,
   weeklyData,
@@ -13,6 +12,7 @@ import {
 } from "./curve-data";
 
 type ChartMode = "daily" | "accumulated";
+const visiblePhases = phases.filter((phase) => !phase.unclassified);
 
 const formatNumber = (value: number) =>
   new Intl.NumberFormat("pt-BR", {
@@ -20,74 +20,16 @@ const formatNumber = (value: number) =>
     maximumFractionDigits: 2,
   }).format(value);
 
-function useAnimatedNumber(value: number, duration = 520) {
-  const [display, setDisplay] = useState(value);
-  const previous = useRef(value);
-
-  useEffect(() => {
-    const startValue = previous.current;
-    const delta = value - startValue;
-    const startedAt = performance.now();
-    let frame = 0;
-
-    const tick = (now: number) => {
-      const progress = Math.min((now - startedAt) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplay(startValue + delta * eased);
-      if (progress < 1) frame = requestAnimationFrame(tick);
-      else previous.current = value;
-    };
-
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [duration, value]);
-
-  return display;
-}
-
-function Icon({ name }: { name: "play" | "pause" | "day" | "week" | "phase" | "feed" }) {
+function Icon({ name }: { name: "play" | "pause" }) {
   const paths = {
     play: <path d="m9 7 9 5-9 5V7Z" />,
     pause: <><path d="M9 7v10" /><path d="M15 7v10" /></>,
-    day: <><circle cx="12" cy="12" r="7" /><path d="M12 9v4l3 2" /></>,
-    week: <><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M8 3v4M16 3v4M4 10h16" /></>,
-    phase: <><path d="M5 19V8m7 11V4m7 15v-7" /><path d="M3 19h18" /></>,
-    feed: <><path d="M7 7h10l2 13H5L7 7Z" /><path d="M9 7V4h6v3M8 12h8" /></>,
   };
 
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       {paths[name]}
     </svg>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  suffix,
-  icon,
-  tone = "green",
-}: {
-  label: string;
-  value: number;
-  suffix?: string;
-  icon: "day" | "week" | "phase" | "feed";
-  tone?: "green" | "amber";
-}) {
-  const animated = useAnimatedNumber(value);
-
-  return (
-    <article className={`metric-card metric-card--${tone}`}>
-      <div className="metric-card__top">
-        <span>{label}</span>
-        <i><Icon name={icon} /></i>
-      </div>
-      <strong>
-        {suffix ? formatNumber(animated) : Math.round(animated)}
-        {suffix && <small>{suffix}</small>}
-      </strong>
-    </article>
   );
 }
 
@@ -159,7 +101,7 @@ function MainCurveChart({
           </filter>
         </defs>
 
-        {phases.map((phase) => (
+        {visiblePhases.map((phase) => (
           <rect
             key={phase.name}
             x={x(phase.startDay)}
@@ -222,9 +164,11 @@ function MainCurveChart({
               <rect width="164" height="64" rx="11" />
               <text x="12" y="20">Dia {tooltipPoint.day} · Semana {tooltipPoint.week}</text>
               <text x="12" y="40" className="chart-tooltip__value">
-                {formatNumber(valueFor(tooltipPoint))} kg/animal
+                {formatNumber(valueFor(tooltipPoint))} {mode === "daily" ? "kg/animal/dia" : "kg/animal"}
               </text>
-              <text x="12" y="56" className="chart-tooltip__phase">{phaseForDay(tooltipPoint.day).shortName}</text>
+              {!phaseForDay(tooltipPoint.day).unclassified && (
+                <text x="12" y="56" className="chart-tooltip__phase">{phaseForDay(tooltipPoint.day).shortName}</text>
+              )}
             </g>
           </g>
         )}
@@ -245,10 +189,13 @@ function WeeklyBarChart({ currentWeek }: { currentWeek: number }) {
         <div>
           <span className="section-kicker">Ritmo do lote</span>
           <h2>Evolução semanal</h2>
+          <p className="chart-description">
+            Cada barra soma a quantidade de ração prevista para um animal durante aquela semana.
+          </p>
         </div>
         <div className="mini-stat">
           <span>Semana {selected.week}</span>
-          <strong>{formatNumber(selected.total)} kg</strong>
+          <strong>{formatNumber(selected.total)} kg/animal</strong>
         </div>
       </div>
       <div className="weekly-bars" role="img" aria-label="Consumo total por semana">
@@ -263,7 +210,7 @@ function WeeklyBarChart({ currentWeek }: { currentWeek: number }) {
             onClick={() => setHoveredWeek(week.week)}
             aria-label={`Semana ${week.week}: ${formatNumber(week.total)} kg por animal`}
           >
-            <span className="weekly-bars__value">{formatNumber(week.total)}</span>
+            <span className="weekly-bars__value">{formatNumber(week.total)} kg/animal</span>
             <i style={{ height: `${(week.total / max) * 100}%` }} />
             <small>{week.week}</small>
           </button>
@@ -271,7 +218,7 @@ function WeeklyBarChart({ currentWeek }: { currentWeek: number }) {
       </div>
       <div className="chart-footnote">
         <span>1</span>
-        <strong>Semana do lote</strong>
+        <strong>Total previsto por animal em cada semana</strong>
         <span>16</span>
       </div>
     </article>
@@ -285,8 +232,7 @@ function PhaseComparison({
   activePhase: string;
   onSelect: (phase: string) => void;
 }) {
-  const max = Math.max(...phases.map((phase) => phase.officialTotal));
-  const classifiedShare = (officialPhaseTotal / finalCurveTotal) * 100;
+  const max = Math.max(...visiblePhases.map((phase) => phase.officialTotal));
 
   return (
     <article className="analytics-card phase-card">
@@ -294,20 +240,17 @@ function PhaseComparison({
         <div>
           <span className="section-kicker">Distribuição</span>
           <h2>Consumo por fase</h2>
+          <p className="chart-description">
+            Cada barra mostra o total de ração previsto para um animal durante todos os dias da fase.
+          </p>
         </div>
-        <div
-          className="quality-ring"
-          style={{ "--classified": `${classifiedShare * 3.6}deg` } as React.CSSProperties}
-          aria-label={`${formatNumber(classifiedShare)} por cento do consumo possui fase oficial`}
-        >
-          <span>
-            <strong>{Math.round(classifiedShare)}%</strong>
-            classificado
-          </span>
+        <div className="unit-badge">
+          <span>Unidade</span>
+          <strong>kg/animal</strong>
         </div>
       </div>
       <div className="phase-bars">
-        {phases.map((phase) => (
+        {visiblePhases.map((phase) => (
           <button
             key={phase.name}
             className={`${activePhase === phase.name ? "active" : ""} ${phase.unclassified ? "warning" : ""}`}
@@ -326,7 +269,10 @@ function PhaseComparison({
                 }}
               />
             </span>
-            <b>{formatNumber(phase.officialTotal)}</b>
+            <b>
+              <span>{formatNumber(phase.officialTotal)}</span>
+              <small>kg/animal</small>
+            </b>
           </button>
         ))}
       </div>
@@ -340,7 +286,6 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activePhase, setActivePhase] = useState("TODAS");
   const current = curveData[currentDay - 1];
-  const currentPhase = phaseForDay(currentDay);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -384,9 +329,12 @@ export default function Home() {
           </div>
         </div>
         <div className="topbar__meta">
-          <span className="live-dot" />
-          Folha oficial digital · 112 dias
-          <a href="/downloads/Curva_Consumo_GranjaFlow.xlsx" download>
+          <span className="topbar__source">
+            <span className="live-dot" />
+            Curva liberada pela integradora · 112 dias
+          </span>
+          <a className="download-button" href="/downloads/Curva_Consumo_GranjaFlow.xlsx" download>
+            <span aria-hidden="true">↓</span>
             Baixar Excel
           </a>
         </div>
@@ -396,20 +344,15 @@ export default function Home() {
         <section className="hero">
           <div>
             <p className="eyebrow">Curva oficial do integrador</p>
-            <h1>A folha oficial, agora clara em cada gráfico.</h1>
+            <h1>A curva liberada pela integradora, transformada em gráficos.</h1>
             <p>
-              A mesma referência técnica da planilha impressa, apresentada em formato visual
-              para o produtor reconhecer, consultar e acompanhar do dia 1 ao dia 112.
+              Entenda quanto cada animal deveria consumir por dia, por semana e por fase,
+              seguindo a referência técnica enviada pela integradora.
             </p>
-          </div>
-          <div className="hero-status">
-            <span>Folha oficial · dia</span>
-            <strong>{currentDay}</strong>
-            <small>de 112 dias</small>
           </div>
         </section>
 
-        <section className="official-document" aria-label="Identificação da folha oficial">
+        <section className="official-document" aria-label="Identificação da curva enviada pela integradora">
           <div className="official-document__brand">
             <span className="official-document__icon">
               <img src="/granjaflow-logo.jpeg" alt="" />
@@ -420,36 +363,55 @@ export default function Home() {
             </div>
           </div>
           <div className="official-document__field">
-            <small>Documento de referência</small>
-            <strong>Planilha4</strong>
+            <small>Origem dos dados</small>
+            <strong>Integradora</strong>
           </div>
           <div className="official-document__field">
             <small>Período técnico</small>
             <strong>16 semanas</strong>
           </div>
           <div className="official-document__seal">
-            <span>Base preservada</span>
+            <span>Curva completa</span>
             <strong>112 dias</strong>
           </div>
         </section>
 
-        <section className="metrics-grid" aria-label="Indicadores principais">
-          <MetricCard label="Consumo acumulado" value={current.accumulated} suffix="kg/animal" icon="feed" />
-          <MetricCard label="Consumo do dia" value={current.daily} suffix="kg/animal" icon="day" />
-          <MetricCard label="Semana atual" value={current.week} icon="week" />
-          <article className={`metric-card ${currentPhase.unclassified ? "metric-card--amber" : "metric-card--green"}`}>
-            <div className="metric-card__top">
-              <span>Fase atual</span>
-              <i><Icon name="phase" /></i>
-            </div>
-            <strong className="metric-card__phase">{currentPhase.shortName}</strong>
-          </article>
+        <section className="interpretation-panel" aria-labelledby="interpretation-title">
+          <div className="interpretation-panel__intro">
+            <span className="section-kicker">Entenda a curva</span>
+            <h2 id="interpretation-title">Como interpretar os números</h2>
+            <p>
+              Esta é uma referência de consumo planejado por animal. Ela indica quanto cada animal
+              deveria consumir segundo a integradora — não representa o consumo real medido na granja.
+            </p>
+          </div>
+          <div className="interpretation-grid">
+            <article>
+              <span>kg/animal/dia</span>
+              <strong>Consumo diário previsto</strong>
+              <p>Quantidade de ração indicada para um animal no dia selecionado.</p>
+            </article>
+            <article>
+              <span>kg/animal acumulado</span>
+              <strong>Consumo acumulado previsto</strong>
+              <p>Soma da ração indicada por animal desde o dia 1 até o dia consultado.</p>
+            </article>
+            <article>
+              <span>kg/animal na fase</span>
+              <strong>Total previsto por fase</strong>
+              <p>Soma da ração indicada para um animal durante todos os dias daquela fase.</p>
+            </article>
+          </div>
+          <p className="interpretation-panel__value">
+            <strong>Como usar:</strong> compare a referência da integradora com o consumo real do lote
+            para identificar desvios e apoiar o planejamento de ração.
+          </p>
         </section>
 
         <section className="primary-card">
           <div className="card-heading">
             <div>
-              <span className="section-kicker">{filteredLabel} · transcrição da folha oficial</span>
+              <span className="section-kicker">{filteredLabel} · dados oficiais da integradora</span>
               <h2>Evolução do consumo</h2>
             </div>
             <div className="segmented" role="tablist" aria-label="Tipo de consumo">
@@ -458,11 +420,23 @@ export default function Home() {
             </div>
           </div>
 
+          <div className="chart-explanation" aria-live="polite">
+            <div>
+              <strong>{mode === "daily" ? "Leitura diária" : "Leitura acumulada"}</strong>
+              <span>
+                {mode === "daily"
+                  ? "Cada ponto mostra quantos quilogramas de ração um animal deveria consumir naquele dia."
+                  : "Cada ponto soma o consumo previsto de um animal desde o dia 1 até o dia selecionado."}
+              </span>
+            </div>
+            <small>{mode === "daily" ? "Unidade: kg/animal/dia" : "Unidade: kg/animal"}</small>
+          </div>
+
           <div className="phase-filter" aria-label="Filtrar por fase">
             <button className={activePhase === "TODAS" ? "active" : ""} onClick={() => selectPhase("TODAS")}>
               Todas
             </button>
-            {phases.map((phase) => (
+            {visiblePhases.map((phase) => (
               <button
                 key={phase.name}
                 className={activePhase === phase.name ? "active" : ""}
@@ -527,7 +501,7 @@ export default function Home() {
             <p>Selecione uma etapa para avançar diretamente ao último dia da fase.</p>
           </div>
           <div className="timeline-track">
-            {phases.map((phase) => (
+            {visiblePhases.map((phase) => (
               <button
                 key={phase.name}
                 className={`${activePhase === phase.name ? "active" : ""} ${phase.unclassified ? "warning" : ""}`}
